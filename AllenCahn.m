@@ -6,10 +6,10 @@ addpath('./graphs/');
 
 % Model parameters
 eps = 1.e-2;  % diffusion parameter
-T = 20;       % Final time
+T = 10;       % Final time
 
 % Subintervals per edge
-ne = 10;
+ne = 20;
 
 % Create graph object
 G = L_graph(5);
@@ -96,12 +96,12 @@ while resid > 1.e-8
         % Solve Newton system        
         %[dy,flag,relres,iter] = minres(@(x)DF(x,K,Ml,C,nall,nf,nt,tau), -F, 1e-8, 10000);
         
-        DF = kron(C(:,2:nt)', Ml(1:nf,1:nf));
+        DF = kron(C(:,2:nt), Ml(1:nf,1:nf));
         DF = DF + tau*eps*kron(speye(nt-1,nt-1), K(1:nf,1:nf));
         
         for i=1:nt-1
             DF((i-1)*nf+1:i*nf,(i-1)*nf+1:i*nf) = DF((i-1)*nf+1:i*nf,(i-1)*nf+1:i*nf) ...
-                + tau*spdiags(Ml(1:nf,1:nf).*(3*Y(1:nf,i+1).^2-1),0,nf,nf);
+                + tau*spdiags(Ml(1:nf,1:nf)*(3*Y(1:nf,i+1).^2-ones(nf,1)),0,nf,nf);
         end
         
         dy = DF\(-F);
