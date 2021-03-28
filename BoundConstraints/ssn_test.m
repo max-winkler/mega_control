@@ -99,7 +99,7 @@ while resnorm > tol && iter < maxiter
 		nr_changed = 0;
 	end
 	fprintf('% 3d  %e (%d, %d)', j, res_norm, nr_active, nr_changed);
-    res = u - max(min( -Mu*u*p/alpha, ub), ua);
+    res = u - max(min( -A_control'*u*p/alpha, ub), ua);
 
 	J = [...
 		Mex(1:nf,1:nf),             sparse(nf,nd), -A_stiff;...
@@ -109,7 +109,7 @@ while resnorm > tol && iter < maxiter
 
 	dx = J \ [zeros(ny,1); res; zeros(ny,1)];
 
-    end
+end
 
 
 
