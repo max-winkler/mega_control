@@ -1,11 +1,9 @@
 clear all;
 close all;
-% clc;
-
 
 % Include subdirectories
-addpath('./core/')
-addpath('./graphs/')
+addpath('../core/')
+addpath('../graphs/')
 
 % Define graph
 G = L_graph(20);
@@ -39,54 +37,59 @@ Mex=diag(sum(Mex,2));
 
 % Lets solve stationary equation on the graph
 A_control = Lex(1:nf,nf+1:end);
-A_stiff = Lex; 
-A_stiff(:,nf+1:end)=[];
-A_stiff(nf+1:end,:)=[];
+A_stiff = Lex(1:nf, 1:nf);
+
+%A_stiff(:,nf+1:end)=[];
+%A_stiff(nf+1:end,:)=[];
 
 % I_pen =
 beta = 1e-1;
 
 % Create saddle point problem
-AA = ...
-    [Mex(1:nf,1:nf) Mex(1:nf,nf+1:end) A_stiff;...
-    Mex(nf+1:end,1:nf) Mex(nf+1:end,nf+1:end)+beta*speye(nd) A_control';
-    A_stiff A_control   sparse(size(A_stiff,1),size(A_stiff,1))
-    ];
+% AA = ...
+%     [Mex(1:nf,1:nf) Mex(1:nf,nf+1:end) A_stiff;...
+%     Mex(nf+1:end,1:nf) Mex(nf+1:end,nf+1:end)+beta*speye(nd) A_control';
+%     A_stiff A_control   sparse(size(A_stiff,1),size(A_stiff,1))
+%     ];
 
 Mu = Mex(nf+1:end,nf+1:end)+beta*speye(nd);
 yd = Mex*ones(nf+nd,1);
 
 n = nf+nd;
 
-% Dummies, wird von setup gebraucht.
-u_a = -5;
-u_b = 5;
+% Index sets
+iF = 1:nf;       % Free nodes
+iD = nf+1:nf+nd; % Dirichlet nodes
 
+% Control bounds
+ua = -5;
+ub = 5;
+
+% Problem parameters
 alpha = 1e-4;
 beta = 1e-2;
-tol = 10^-4
+
+% Algorithm parameters
+tol = 10^-4;
 maxiter = 20;
 
-iTeraTions =[];
-
+% Initial guess
 u = zeros(nd,1);
+mu = zeros(nd,1);
 
-% Evaluating the Integral \int_{\Omega_2(x_1)} p
-% A couple of steps of a stationary iteration
-steps = 4;
-% p_norms = sqrt(I*p);
+% Compute state and adjoint for initial guess
+y = Lex(iF,iF)\(F(iF,1) - Lex(iF,iD)*u);
+p = Lex(iF,iF)\(Mex(iF,iF)*(y - yd(iF)) + Mex(iF,iD)*(u - yd(iD)));
 
 iter = 0;
 display('iter norm_F');
 display('===========');
-display(sprintf('%2d   %e', iter, norm_F));
+%display(sprintf('%2d   %e', iter, norm_F));
 
-resnorm = Inf
+resnorm = Inf;
+
 while resnorm > tol && iter < maxiter
-    iter = iter + 1;
-    
-	y = A_stiff\(A_control * u);
-	p = A_stiff\(Mex(1:nf,1:nf)*(y - yd));
+    iter = iter + 1;    
 
 	res = u - max(min( -A_control'*p/alpha, ub), ua);
 	res_norm = sqrt( res' * Mu * res);

@@ -12,7 +12,9 @@ T = 10;       % Final time
 ne = 20;
 
 % Create graph object
-G = L_graph(5);
+% G = L_graph(5);
+G = cube_graph(3);
+
 m = size(G.Edges,1);    % number of edges
 n = size(G.Nodes,1);    % number of nodes
 
