@@ -1,3 +1,7 @@
+% REMARK: This algorithm is implemented as derived in the lecture notes by
+% Roland Herzog "Optimierung mit partiellen Differentialgleichungen" held 
+% the winter term 2018. See Equation (9.45).
+
 clear all;
 close all;
 
@@ -6,7 +10,7 @@ addpath('../core/')
 addpath('../graphs/')
 
 % Define graph
-G = L_graph(20);
+G = L_graph(5);
 
 m = size(G.Edges,1); % number of edges
 n = size(G.Nodes,1);% number of nodes
@@ -17,33 +21,26 @@ ne = 50;
 % Model parameters
 mu = 1.; % diffusion
 c0 = 1.; % potential
-f = 1.;  % source term
+f = 0.;  % source term
 
 nei = ne-1; % number of interior points on an edge
 ntil = nei*m; % number of interior points overall
 
 % Define the control vertices
 nd = floor(n/3);
+
 ind = randperm(n,nd);
+ordering=[setdiff(1:n,ind),ind];
+G = reordernodes(G,ordering);
 
 nf = ntil+n-nd;
 
-NN=numnodes(G);
-ordering=[setdiff(1:NN,ind),ind];
-G = reordernodes(G,ordering);
-
-[Lex,Mex,F] = assemble(G, ne, mu, c0, f);
-Mex=diag(sum(Mex,2));
+[L,M,f] = assemble(G, ne, mu, c0, f);
+M=diag(sum(M,2));
 
 % Lets solve stationary equation on the graph
-A_control = Lex(1:nf,nf+1:end);
-A_stiff = Lex(1:nf, 1:nf);
-
-%A_stiff(:,nf+1:end)=[];
-%A_stiff(nf+1:end,:)=[];
-
-% I_pen =
-beta = 1e-1;
+A_control = L(1:nf,nf+1:end);
+A_stiff = L(1:nf, 1:nf);
 
 % Create saddle point problem
 % AA = ...
@@ -52,8 +49,7 @@ beta = 1e-1;
 %     A_stiff A_control   sparse(size(A_stiff,1),size(A_stiff,1))
 %     ];
 
-Mu = Mex(nf+1:end,nf+1:end)+beta*speye(nd);
-yd = Mex*ones(nf+nd,1);
+yd = M*ones(nf+nd,1);
 
 n = nf+nd;
 
@@ -75,44 +71,86 @@ maxiter = 20;
 
 % Initial guess
 u = zeros(nd,1);
-mu = zeros(nd,1);
+mult = zeros(nd,1);
 
 % Compute state and adjoint for initial guess
-y = Lex(iF,iF)\(F(iF,1) - Lex(iF,iD)*u);
-p = Lex(iF,iF)\(Mex(iF,iF)*(y - yd(iF)) + Mex(iF,iD)*(u - yd(iD)));
+y = L(iF,iF)\(f(iF,1) - L(iF,iD)*u);
+p = L(iF,iF)\(yd(iF) - M(iF,iF)*y - M(iF,iD)*u);
+
+% Plot initial iterate
+plot_function_over_graph(G,[y;u],nd);
 
 iter = 0;
-display('iter norm_F');
-display('===========');
+
+disp('iter norm_F');
+disp('===========');
 %display(sprintf('%2d   %e', iter, norm_F));
 
 resnorm = Inf;
+nr_changed = 1;
+last_chi = zeros(nd,1);
 
-while resnorm > tol && iter < maxiter
+while iter < maxiter
+    
     iter = iter + 1;    
 
-	res = u - max(min( -A_control'*p/alpha, ub), ua);
-	res_norm = sqrt( res' * Mu * res);
+    % Residuals for all equations
+    res_adjoint = L(iF,iF)*p + M(iF,iF)*(y-yd(iF)) + M(iF,iD)*(u-yd(iD));
+    res_state   = L(iF,iF)*y + L(iF,iD)*u - f(iF);
+    res_control = L(iD,iF)*p + M(iD,iF)*(y-yd(iF)) + M(iD,iD)*(u-yd(iD)) + beta*u + mult;
+    res_multip  = -mult+max(0,(u-ub)+mult);
+    
+    mult = -res_control;
+    
+	%res = u - max(min(-A_control'*p/alpha, ub), ua);
+	%res_norm = sqrt( res' * Mu * res);
 
-	chi = (ua < -A_control'*p/alpha) & (-A_control'*p/alpha < ub);
+    % Active set
+	chi = (mult + (u-ub) > 0);
+    
 	nr_active = sum(chi);
-	if j > 0
-		nr_changed = sum(abs( chi - last_chi ));
-	else
-		nr_changed = 0;
-	end
-	fprintf('% 3d  %e (%d, %d)', j, res_norm, nr_active, nr_changed);
-    res = u - max(min( -A_control'*u*p/alpha, ub), ua);
+    nr_inactive = nd-nr_active;
+	nr_changed = sum(abs(chi - last_chi));
 
-	J = [...
-		Mex(1:nf,1:nf),             sparse(nf,nd), -A_stiff;...
-		sparse(nd,nf), spdiags(chi,0,nu,nu)*Mex(nf+1:end,nf+1:end)+beta*speye(nd),  A_control';...
-		-A_stiff,             A_control,           sparse(nf,nf)...
-		];
+    I_A = spdiags(chi, 0, nd, nd);
+    I_I = speye(nd,nd)-I_A;
+    
+    % Console output
+    fprintf("Iteration      : %i\n", iter);
+    fprintf("Active nodes   : %i\n", nr_active);
+    fprintf("Active changed : %i\n", nr_changed); 
+    
+    %res = u - max(min( -A_control'*u*p/alpha, ub), ua);
 
-	dx = J \ [zeros(ny,1); res; zeros(ny,1)];
+    % Assemble Newton system
+    % ordering: columns - state, control, adjoint
+    %           rows    - adjoint eq., opt. cond, state eq.
+    
+    % Right-hand side of Newton system
+    F = [yd(iF) ; ub*I_A*ones(nd,1) ; f(iF)];
+    
+    % Left-hand side of Newton system 
+    DF = [M(iF,iF) , M(iF,iD)                             , L(iF,iF) ; ...
+          I_I*M(iD,iF) , I_I*(M(iD,iD) + beta*speye(nd,nd)) + I_A, I_I*L(iD,iF) ; ...
+          L(iF,iF) , L(iF,iD)                             , zeros(nf,nf)];
+    
+% 	DF = [...
+% 		Mex(1:nf,1:nf),             sparse(nf,nd), -A_stiff;...
+% 		sparse(nd,nf), spdiags(chi,0,nu,nu)*Mex(nf+1:end,nf+1:end)+beta*speye(nd),  A_control';...
+% 		-A_stiff,             A_control,           sparse(nf,nf)...
+% 		];
+
+%	dx = DF \ [zeros(ny,1); res; zeros(ny,1)];
+    
+    % Solve system of equations
+    x = DF \ F;
+    
+    y = x(iF);
+    u = x(nf+iD);
+    p = x(nf+nd+iF);
+
+    % Plot initial iterate
+    plot_function_over_graph(G,[y;u],nd);
+    pause();
 
 end
-
-
-
