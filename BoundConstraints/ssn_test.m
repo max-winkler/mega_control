@@ -1,5 +1,5 @@
 % REMARK: This algorithm is implemented as derived in the lecture notes by
-% Roland Herzog "Optimierung mit partiellen Differentialgleichungen" held 
+% Roland Herzog "Optimierung mit partiellen Differentialgleichungen" from 
 % the winter term 2018. See Equation (9.45).
 
 clear all;
@@ -10,7 +10,7 @@ addpath('../core/')
 addpath('../graphs/')
 
 % Define graph
-G = L_graph(5);
+G = L_graph(10);
 
 m = size(G.Edges,1); % number of edges
 n = size(G.Nodes,1);% number of nodes
@@ -43,12 +43,9 @@ yd = M*ones(nf+nd,1);
 iF = 1:nf;       % Free nodes
 iD = nf+1:nf+nd; % Dirichlet nodes
 
-% Control bounds
-ua = -5;
-ub = 1.2;
-
 % Problem parameters
 beta = 1e-2;
+ub = 1.2;
 
 % Algorithm parameters
 maxiter = 20;
@@ -63,6 +60,7 @@ p = L(iF,iF)\(yd(iF) - M(iF,iF)*y - M(iF,iD)*u);
 
 % Plot initial iterate
 plot_function_over_graph(G,[y;u],nd);
+pause(1);
 
 iter = 0;
 
@@ -73,17 +71,9 @@ while nr_changed > 0 && iter < maxiter
     
     iter = iter + 1;    
 
-    % Residuals for all equations
-%     res_adjoint = L(iF,iF)*p + M(iF,iF)*(y-yd(iF)) + M(iF,iD)*(u-yd(iD));
-%     res_state   = L(iF,iF)*y + L(iF,iD)*u - f(iF);
-%     res_multip  = -mult+max(0,(u-ub)+mult);
-
-    res_control = L(iD,iF)*p + M(iD,iF)*y + M(iD,iD)*u - yd(iD) + beta*u;
-    
-    %r = (MonB*u(indexDi)+(MDF*y(FreeNodes)-b_yd(indexDi)-ADF*p(FreeNodes))/data.nu);
-    %mu=-r
-    
-    mult = -res_control;
+    % Compute new multiplier
+    resid = L(iD,iF)*p + M(iD,iF)*y + M(iD,iD)*u - yd(iD) + beta*u;    
+    mult = -resid;
         
     % Active set
 	chi = (mult + beta*(u-ub) > 0);
@@ -101,6 +91,7 @@ while nr_changed > 0 && iter < maxiter
     disp('=============================');
     fprintf("Iteration      : %i\n", iter);
     fprintf("Active nodes   : %i\n", nr_active);
+    fprintf("Inactive nodes : %i\n", nd-nr_active);
     fprintf("Active changed : %i\n", nr_changed); 
 
     % Assemble Newton system
@@ -111,9 +102,9 @@ while nr_changed > 0 && iter < maxiter
     F = [yd(iF) ; I_I*yd(iD) + ub*I_A*ones(nd,1) ; f(iF)];
     
     % Left-hand side of Newton system 
-    DF = [M(iF,iF) , M(iF,iD)                             , L(iF,iF) ; ...
-          I_I*M(iD,iF) , I_I*(M(iD,iD) + beta*speye(nd,nd)) + I_A, I_I*L(iD,iF) ; ...
-          L(iF,iF) , L(iF,iD)                             , sparse(nf,nf)];
+    DF = [M(iF,iF)     , M(iF,iD)                                 , L(iF,iF) ; ...
+          I_I*M(iD,iF) , I_I*(M(iD,iD) + beta*speye(nd,nd)) + I_A , I_I*L(iD,iF) ; ...
+          L(iF,iF)     , L(iF,iD)                                 , sparse(nf,nf)];
         
     % Solve system of equations
     x = DF \ F;
@@ -124,6 +115,6 @@ while nr_changed > 0 && iter < maxiter
 
     % Plot initial iterate
     plot_function_over_graph(G,[y;u],nd);
-    pause();
+    pause(1);
 
 end
