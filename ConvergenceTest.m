@@ -6,6 +6,7 @@ close all;
 
 addpath('./core/');
 addpath('./graphs/');
+addpath('./optimization/');
 
 G = L_graph(15);
 
@@ -18,8 +19,9 @@ NrComp = 10;
 % Number of Dirichlet vertices
 nd = 20;
 
-% Regularization parameter
+% Problem parameters
 beta = 1.e-2;
+ub = 1.6;
 
 % Randomly select some Dirichlet nodes
 ind = randperm(n,nd);
@@ -33,40 +35,26 @@ err_state_l2 = zeros(1,NrComp-1);
 err_state_h1 = zeros(1,NrComp-1);
 err_control = zeros(1,NrComp-1);
  
+% Parameters for pdas algorithm
+param.max_iter = 30;
+param.plot = false;
+
 for ne=2.^(1:NrComp)
     
     ItComp = log2(ne);
     
     fprintf("Computing refinement level %d/%d\n", ItComp, NrComp)
+                
+    % Assemble finite element matrices
+    [L,M,f] = assemble(G, ne, 1, 1, 0.5);
+    yd = M*ones(size(f));
     
-    nei = ne-1; % number of interior points on an edge
-    ntil = nei*m; % number of interior points overall    
-        
-    nf = ntil+n-nd;             
-            
-    [Lex,Mex,F] = assemble(G, ne, 1, 1, 1.5);
-            
-    % Create saddle point problem
-    % Ordering of equations: adjoint eq., opt. condition, state eq
-    % Ordering of variables: state, control, adjoint state
-    AA = [...
-        Mex(1:nf,1:nf), Mex(1:nf,nf+1:end), Lex(1:nf,1:nf)';...
-        Mex(nf+1:end,1:nf), Mex(nf+1:end,nf+1:end)+beta*speye(nd), Lex(1:nf,nf+1:end)';
-        Lex(1:nf,1:nf), Lex(1:nf,nf+1:end), sparse(nf,nf)
-        ];
+    % Solve problem with primal dual active set strategy
+    [y_,u_,~] = solve_pdas(G,L,M,f,yd,beta,ub,nd,param);
     
-    b=zeros(nf+nd+nf,1);
-    % Incorporate rhs yd=1
-    b(1:nf+nd,1) = Mex*ones(nf+nd,1);
-    % Incorporate rhs f
-    b(nf+nd+1:end,1) = F(1:nf,1);
-    
-    % Solve equation system with the best solver we have
-    x=AA\b;
-
-    % Extract control and state
-    u(:,ItComp) = x(nf+1:nf+nd);
-    y{ItComp} = x(1:nf+nd);
+    % Save iterate
+    u(:,ItComp) = u_;
+    y{ItComp} = [y_;u_];
     
     % Plot the solution
     plot_function_over_graph(G,y{ItComp},nd);
@@ -91,8 +79,8 @@ for k=1:NrComp-1
         
     % Compute error norm
     diff = fine-y{NrComp};    
-    err_state_l2(k) = sqrt(diff'*Mex*diff);
-    err_state_h1(k) = sqrt(diff'*Lex*diff);
+    err_state_l2(k) = sqrt(diff'*M*diff);
+    err_state_h1(k) = sqrt(diff'*L*diff);
 end
 
 H = 2.^(-[1:NrComp-1]);
@@ -106,9 +94,9 @@ eoc_state_h1 = log(err_state_h1(2:end)./err_state_h1(1:end-1))/log(1/2);
 T = table(H(2:end)', err_control(2:end)', eoc_control', ...
     err_state_h1(2:end)', eoc_state_h1', ...
     err_state_l2(2:end)', eoc_state_l2');
-T.Properties.VariableNames = {'h', '|u-uh|', 'eoc(u)', ...
-    '|y-yh|_H1', 'eoc(y,H1)', ...
-    '|y-yh|_L2', 'eoc(y,L2)'};
+T.Properties.VariableNames = {'h', 'err_u', 'eoc_u', ...
+    'err_y_H1', 'eoc_y_H1', ...
+    'err_y_L2', 'eoc_y_L2'};
 disp(T)
 
 % Convergence plot

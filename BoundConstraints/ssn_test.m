@@ -46,7 +46,7 @@ ub = 1.2;
 
 % Algorithm parameters
 param.maxiter = 20;
-param.plot = true;
+param.plot = false;
 param.verbose = true;
 
-solve_pdas(G,L,M,f,yd,beta,ub,nd);
+solve_pdas(G,L,M,f,yd,beta,ub,nd,param);
